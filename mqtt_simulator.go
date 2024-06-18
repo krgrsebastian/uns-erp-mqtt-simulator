@@ -52,24 +52,22 @@ func randomString(n int) string {
 	return string(result)
 }
 
-func generateERPData() ERPData {
-	now := time.Now()
+func generateERPData(baseTime time.Time) ERPData {
 	return ERPData{
 		OrderID:     fmt.Sprintf("ORD-%s", randomString(4)),
 		ProductID:   fmt.Sprintf("PROD-%s", randomString(4)),
 		Quantity:    1 + rand.Intn(100),
-		Timestamp:   now.Format("2006-01-02 15:04:05"),
-		TimestampMs: now.UnixNano() / int64(time.Millisecond),
+		Timestamp:   baseTime.Format("2006-01-02 15:04:05"),
+		TimestampMs: baseTime.UnixNano() / int64(time.Millisecond),
 	}
 }
 
-func generateMachineData() MachineData {
+func generateMachineData(baseTime time.Time) MachineData {
 	beltSpeed := 0.0
 	if currentMachineState == "running" {
 		beltSpeed = 1.0 + rand.Float64()*5.0
 	}
 
-	now := time.Now()
 	return MachineData{
 		Counter:     currentCounter,
 		State:       currentMachineState,
@@ -77,8 +75,8 @@ func generateMachineData() MachineData {
 		Temperature: 20.0 + rand.Float64()*15.0,
 		BeltSpeed:   beltSpeed,
 		Humidity:    30.0 + rand.Float64()*20.0,
-		Timestamp:   now.Format("2006-01-02 15:04:05"),
-		TimestampMs: now.UnixNano() / int64(time.Millisecond),
+		Timestamp:   baseTime.Format("2006-01-02 15:04:05"),
+		TimestampMs: baseTime.UnixNano() / int64(time.Millisecond),
 	}
 }
 
@@ -118,7 +116,11 @@ func publish(client mqtt.Client, topic string, payload interface{}) {
 
 	token := client.Publish(topic, 0, false, data)
 	token.Wait()
-	log.Printf("Published to %s: %s", topic, data)
+	if token.Error() != nil {
+		log.Printf("Error publishing to topic %s: %v", topic, token.Error())
+	} else {
+		log.Printf("Published to %s: %s", topic, data)
+	}
 }
 
 func main() {
@@ -156,7 +158,8 @@ func main() {
 		broker, clientID, erpTopic, machineTopicPrefix, interval)
 
 	// Initialize the first order and publish it immediately
-	currentOrder = generateERPData()
+	startTime := time.Now().Add(-30 * time.Minute)
+	currentOrder = generateERPData(startTime)
 	currentCounter = 0
 	currentMachineState = "running"
 	stateDurationCounter = rand.Intn(10)
@@ -170,6 +173,39 @@ func main() {
 	token.Wait()
 	log.Printf("Published initial ERP data: %s", erpPayload)
 
+	// Publish historical data
+	for t := startTime; t.Before(time.Now()); t = t.Add(intervalDuration) {
+		// Generate Machine data
+		machineData := generateMachineData(t)
+
+		// Publish individual data points
+		publish(client, fmt.Sprintf("%s/counter", machineTopicPrefix), map[string]interface{}{
+			"counter":      machineData.Counter,
+			"timestamp_ms": machineData.TimestampMs,
+		})
+		publish(client, fmt.Sprintf("%s/pressure", machineTopicPrefix), map[string]interface{}{
+			"pressure":     machineData.Pressure,
+			"timestamp_ms": machineData.TimestampMs,
+		})
+		publish(client, fmt.Sprintf("%s/temperature", machineTopicPrefix), map[string]interface{}{
+			"temperature":  machineData.Temperature,
+			"timestamp_ms": machineData.TimestampMs,
+		})
+		publish(client, fmt.Sprintf("%s/belt_speed", machineTopicPrefix), map[string]interface{}{
+			"belt_speed":   machineData.BeltSpeed,
+			"timestamp_ms": machineData.TimestampMs,
+		})
+		publish(client, fmt.Sprintf("%s/humidity", machineTopicPrefix), map[string]interface{}{
+			"humidity":     machineData.Humidity,
+			"timestamp_ms": machineData.TimestampMs,
+		})
+
+		// Increment counter if machine is running
+		if machineData.State == "running" {
+			currentCounter++
+		}
+	}
+
 	// Create tickers
 	mainTicker := time.NewTicker(intervalDuration)
 	stateTicker := time.NewTicker(20 * time.Second)
@@ -181,7 +217,7 @@ func main() {
 		case <-mainTicker.C:
 			// Publish ERP data if counter reaches the target quantity
 			if currentCounter >= currentOrder.Quantity {
-				currentOrder = generateERPData()
+				currentOrder = generateERPData(time.Now())
 				currentCounter = 0
 
 				erpPayload, err := json.Marshal(currentOrder)
@@ -196,7 +232,7 @@ func main() {
 			}
 
 			// Generate Machine data
-			machineData := generateMachineData()
+			machineData := generateMachineData(time.Now())
 
 			// Publish individual data points
 			publish(client, fmt.Sprintf("%s/counter", machineTopicPrefix), map[string]interface{}{
@@ -230,7 +266,7 @@ func main() {
 			updateState()
 
 			// Generate Machine data with updated state
-			machineData := generateMachineData()
+			machineData := generateMachineData(time.Now())
 
 			// Publish state data
 			publish(client, fmt.Sprintf("%s/state", machineTopicPrefix), map[string]interface{}{
