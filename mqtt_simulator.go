@@ -199,6 +199,10 @@ func main() {
 			"humidity":     machineData.Humidity,
 			"timestamp_ms": machineData.TimestampMs,
 		})
+		publish(client, fmt.Sprintf("%s/state", machineTopicPrefix), map[string]interface{}{
+			"state":        machineData.State,
+			"timestamp_ms": machineData.TimestampMs,
+		})
 
 		// Increment counter if machine is running
 		if machineData.State == "running" {
@@ -255,11 +259,6 @@ func main() {
 				"humidity":     machineData.Humidity,
 				"timestamp_ms": machineData.TimestampMs,
 			})
-
-			// Increment counter if machine is running
-			if machineData.State == "running" {
-				currentCounter++
-			}
 
 		case <-stateTicker.C:
 			// Update the state every minute
