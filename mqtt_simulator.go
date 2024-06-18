@@ -17,6 +17,7 @@ type ERPData struct {
 	OrderID     string `json:"order_id"`
 	ProductID   string `json:"product_id"`
 	Quantity    int    `json:"quantity"`
+	Timestamp   string `json:"timestamp"`
 	TimestampMs int64  `json:"timestamp_ms"`
 }
 
@@ -56,6 +57,7 @@ func generateERPData(baseTime time.Time) ERPData {
 		OrderID:     fmt.Sprintf("ORD-%s", randomString(4)),
 		ProductID:   fmt.Sprintf("PROD-%s", randomString(4)),
 		Quantity:    1 + rand.Intn(100),
+		Timestamp:   baseTime.Format("2006-01-02 15:04:05"),
 		TimestampMs: baseTime.UnixNano() / int64(time.Millisecond),
 	}
 }
@@ -258,8 +260,13 @@ func main() {
 				"timestamp_ms": machineData.TimestampMs,
 			})
 
+			// Increment counter if machine is running
+			if machineData.State == "running" {
+				currentCounter++
+			}
+
 		case <-stateTicker.C:
-			// Update the state every minute
+			// Update the state every 20 seconds
 			updateState()
 
 			// Generate Machine data with updated state
