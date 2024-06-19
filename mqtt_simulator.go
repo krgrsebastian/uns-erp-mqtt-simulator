@@ -80,8 +80,8 @@ func generateMachineData(baseTime time.Time) MachineData {
 	}
 }
 
-func updateState() {
-	if stateDurationCounter > 0 && rand.Float64() < 0.8 { // 80% chance to stay in the current state
+func updateState(changeProbability float64) {
+	if stateDurationCounter > 0 && rand.Float64() < changeProbability { // Probability to stay in the current state
 		stateDurationCounter--
 	} else {
 		states := []string{"running", "idle", "unknown", "stop", "maintenance", "cleaning", "inlet jam", "outlet jam"}
@@ -125,10 +125,10 @@ func publish(client mqtt.Client, topic string, payload interface{}) {
 
 func main() {
 	// Set default values for environment variables
-	broker := getEnv("BROKER", "tcp://localhost:1883")
+	broker := getEnv("BROKER", "tcp://10.206.60.71:1883")
 	clientID := getEnv("CLIENT_ID", "mqtt_simulator")
-	erpTopic := getEnv("ERP_TOPIC", "production/erp")
-	machineTopicPrefix := getEnv("MACHINE_TOPIC", "production/machine")
+	erpTopic := getEnv("ERP_TOPIC", "umh/v1/umh/cologne/ehrenfeld/office/_historian/erp")
+	machineTopicPrefix := getEnv("MACHINE_TOPIC", "umh/v1/umh/cologne/ehrenfeld/office/_historian")
 	interval := getEnv("INTERVAL", "5s")
 
 	// Log the environment variables to ensure they are set
@@ -158,7 +158,7 @@ func main() {
 		broker, clientID, erpTopic, machineTopicPrefix, interval)
 
 	// Initialize the first order and publish it immediately
-	startTime := time.Now().Add(-30 * time.Minute)
+	startTime := time.Now().Add(-1 * time.Hour) // Change to 1 hour in the past
 	currentOrder = generateERPData(startTime)
 	currentCounter = 0
 	currentMachineState = "running"
@@ -175,6 +175,9 @@ func main() {
 
 	// Publish historical data
 	for t := startTime; t.Before(time.Now()); t = t.Add(intervalDuration) {
+		// Update state for historical data period with a lower probability
+		updateState(0.95) // 95% chance to stay in the current state
+
 		// Generate Machine data
 		machineData := generateMachineData(t)
 
@@ -207,6 +210,21 @@ func main() {
 		// Increment counter if machine is running
 		if machineData.State == "running" {
 			currentCounter++
+		}
+
+		// Publish new ERP order if counter reaches the target quantity
+		if currentCounter >= currentOrder.Quantity {
+			currentOrder = generateERPData(t)
+			currentCounter = 0
+
+			erpPayload, err := json.Marshal(currentOrder)
+			if err != nil {
+				log.Fatalf("Error marshaling ERP JSON: %v", err)
+			}
+
+			token := client.Publish(erpTopic, 0, false, erpPayload)
+			token.Wait()
+			log.Printf("Published ERP data: %s", erpPayload)
 		}
 	}
 
@@ -267,7 +285,7 @@ func main() {
 
 		case <-stateTicker.C:
 			// Update the state every 20 seconds
-			updateState()
+			updateState(0.8) // 80% chance to stay in the current state during real-time
 
 			// Generate Machine data with updated state
 			machineData := generateMachineData(time.Now())
