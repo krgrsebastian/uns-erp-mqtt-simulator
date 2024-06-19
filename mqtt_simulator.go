@@ -80,8 +80,8 @@ func generateMachineData(baseTime time.Time) MachineData {
 	}
 }
 
-func updateState() {
-	if stateDurationCounter > 0 && rand.Float64() < 0.8 { // 80% chance to stay in the current state
+func updateState(changeProbability float64) {
+	if stateDurationCounter > 0 && rand.Float64() < changeProbability { // Probability to stay in the current state
 		stateDurationCounter--
 	} else {
 		states := []string{"running", "idle", "unknown", "stop", "maintenance", "cleaning", "inlet jam", "outlet jam"}
@@ -175,8 +175,8 @@ func main() {
 
 	// Publish historical data
 	for t := startTime; t.Before(time.Now()); t = t.Add(intervalDuration) {
-		// Update state for historical data period
-		updateState()
+		// Update state for historical data period with a lower probability
+		updateState(0.95) // 95% chance to stay in the current state
 
 		// Generate Machine data
 		machineData := generateMachineData(t)
@@ -210,6 +210,21 @@ func main() {
 		// Increment counter if machine is running
 		if machineData.State == "running" {
 			currentCounter++
+		}
+
+		// Publish new ERP order if counter reaches the target quantity
+		if currentCounter >= currentOrder.Quantity {
+			currentOrder = generateERPData(t)
+			currentCounter = 0
+
+			erpPayload, err := json.Marshal(currentOrder)
+			if err != nil {
+				log.Fatalf("Error marshaling ERP JSON: %v", err)
+			}
+
+			token := client.Publish(erpTopic, 0, false, erpPayload)
+			token.Wait()
+			log.Printf("Published ERP data: %s", erpPayload)
 		}
 	}
 
@@ -270,7 +285,7 @@ func main() {
 
 		case <-stateTicker.C:
 			// Update the state every 20 seconds
-			updateState()
+			updateState(0.8) // 80% chance to stay in the current state during real-time
 
 			// Generate Machine data with updated state
 			machineData := generateMachineData(time.Now())
