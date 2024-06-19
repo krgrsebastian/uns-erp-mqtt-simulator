@@ -125,10 +125,10 @@ func publish(client mqtt.Client, topic string, payload interface{}) {
 
 func main() {
 	// Set default values for environment variables
-	broker := getEnv("BROKER", "tcp://localhost:1883")
+	broker := getEnv("BROKER", "tcp://10.206.60.71:1883")
 	clientID := getEnv("CLIENT_ID", "mqtt_simulator")
-	erpTopic := getEnv("ERP_TOPIC", "production/erp")
-	machineTopicPrefix := getEnv("MACHINE_TOPIC", "production/machine")
+	erpTopic := getEnv("ERP_TOPIC", "umh/v1/umh/cologne/ehrenfeld/office/_historian/erp")
+	machineTopicPrefix := getEnv("MACHINE_TOPIC", "umh/v1/umh/cologne/ehrenfeld/office/_historian")
 	interval := getEnv("INTERVAL", "5s")
 
 	// Log the environment variables to ensure they are set
@@ -158,7 +158,7 @@ func main() {
 		broker, clientID, erpTopic, machineTopicPrefix, interval)
 
 	// Initialize the first order and publish it immediately
-	startTime := time.Now().Add(-30 * time.Minute)
+	startTime := time.Now().Add(-1 * time.Hour) // Change to 1 hour in the past
 	currentOrder = generateERPData(startTime)
 	currentCounter = 0
 	currentMachineState = "running"
@@ -175,6 +175,9 @@ func main() {
 
 	// Publish historical data
 	for t := startTime; t.Before(time.Now()); t = t.Add(intervalDuration) {
+		// Update state for historical data period
+		updateState()
+
 		// Generate Machine data
 		machineData := generateMachineData(t)
 
