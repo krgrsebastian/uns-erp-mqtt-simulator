@@ -8,9 +8,14 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	mochi_mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/hooks/auth"
+	"github.com/mochi-mqtt/server/v2/listeners"
 )
 
 type ERPData struct {
@@ -123,9 +128,9 @@ func publish(client mqtt.Client, topic string, payload interface{}) {
 	}
 }
 
-func main() {
+func setupClientAndPublish() {
 	// Set default values for environment variables
-	broker := getEnv("BROKER", "tcp://10.206.60.71:1883")
+	broker := getEnv("BROKER", "tcp://localhost:1884")
 	clientID := getEnv("CLIENT_ID", "mqtt_simulator")
 	erpTopic := getEnv("ERP_TOPIC", "umh/v1/umh/cologne/ehrenfeld/office/_historian/erp")
 	machineTopicPrefix := getEnv("MACHINE_TOPIC", "umh/v1/umh/cologne/ehrenfeld/office/_historian")
@@ -309,4 +314,45 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func main() {
+	// Create the new MQTT Server.
+	server := mochi_mqtt.New(nil)
+
+	// Allow all connections.
+	_ = server.AddHook(new(auth.AllowHook), nil)
+
+	// Create a TCP listener on a standard port.
+	tcp := listeners.NewTCP(listeners.Config{ID: "t1", Address: ":1884"})
+	err := server.AddListener(tcp)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Serve the MQTT server in a goroutine.
+	go func() {
+		err := server.Serve()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	// Set up signal handling to gracefully shut down the server.
+	sigs := make(chan os.Signal, 1)
+	done := make(chan bool, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		done <- true
+	}()
+
+	// Call your existing MQTT client setup function here.
+	setupClientAndPublish()
+
+	// Run server until interrupted
+	<-done
+
+	// Cleanup
+	server.Close()
 }
