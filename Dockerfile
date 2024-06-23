@@ -1,10 +1,10 @@
-# Use the official Golang image as the build environment
-FROM golang:1.18 as builder
+# Use the official Golang image to build the app
+FROM golang:1.21-alpine AS builder
 
 # Set the Current Working Directory inside the container
 WORKDIR /app
 
-# Copy go.mod and go.sum files
+# Copy go mod and sum files
 COPY go.mod go.sum ./
 
 # Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed
@@ -14,13 +14,16 @@ RUN go mod download
 COPY . .
 
 # Build the Go app
-RUN go build -o mqtt_simulator .
+RUN go build -o mqtt-server .
 
 # Start a new stage from scratch
-FROM debian:buster
+FROM alpine:latest
 
 # Copy the Pre-built binary file from the previous stage
-COPY --from=builder /app/mqtt_simulator /app/mqtt_simulator
+COPY --from=builder /app/mqtt-server .
+
+# Expose port 1883 to the outside world
+EXPOSE 1884
 
 # Command to run the executable
-ENTRYPOINT ["/app/mqtt_simulator"]
+CMD ["/mqtt-server"]
