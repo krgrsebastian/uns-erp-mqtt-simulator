@@ -24,6 +24,7 @@ COPY --from=builder /app/mqtt-server .
 
 # Expose port 1883 to the outside world
 EXPOSE 1884
+EXPOSE 8081
 
 # Command to run the executable
 CMD ["/mqtt-server"]
